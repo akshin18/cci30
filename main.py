@@ -1,10 +1,12 @@
 import os
+import json
 
 import requests
 from requests.exceptions import ConnectionError, Timeout, TooManyRedirects
 from dotenv import load_dotenv, find_dotenv
 import pandas as pd
 import numpy as np
+import math
 
 
 # Load API Key
@@ -18,9 +20,10 @@ def calculate_cci30(data):
     # Pars json to Data Frame
     df = pd.json_normalize(data)
     # Drop Unnecessary data
-    df = df.loc[:, ["name", "quote.USD.market_cap"]]
+    df = df.loc[:, ["symbol", "quote.USD.market_cap"]]
+    df["adjusted_market_cap"] =   df.apply(adjusted_market_cap_prep,axis=1) 
     # Calculate SQRT Market Cap
-    df["SQRT_market_cap"] = np.sqrt(df["quote.USD.market_cap"])
+    df["SQRT_market_cap"] = np.sqrt(df["adjusted_market_cap"])
     # Calculate Total Market Cap
     total_sqrt_market_cap = df["SQRT_market_cap"].sum()
     # Calculate Weights
@@ -33,7 +36,7 @@ def get_market_cap():
     url = 'https://pro-api.coinmarketcap.com/v1/cryptocurrency/listings/latest'
     parameters = {
         'start': '1',
-        'limit': '500',
+        'limit': '30',
         'convert': 'USD'
     }
     headers = {
@@ -54,5 +57,31 @@ def main():
     print(result)
 
 
+
+def adjusted_market_cap_prep(row):
+    global symbols
+    return adjusted_market_cap(symbols[row[0]])
+
+def adjusted_market_cap(market_caps, alpha=2500):    
+    adjusted_cap = 0
+    normalizer = 0
+    
+    for i, market_cap in enumerate(market_caps):
+        weight = math.exp(-alpha*i)
+        adjusted_cap += weight * market_cap
+        normalizer += weight
+        
+    return adjusted_cap / normalizer
+
+
+
 if __name__ == "__main__":
+    f = open("data.json","r").read()
+    symbols = {}
+    data = json.loads(f)
+    for i in data:
+        if i["coin"]["symbol"] in symbols.keys():
+            symbols[i["coin"]["symbol"]].append(i["market_cap"])
+        else:
+            symbols.update({i["coin"]["symbol"]:[]})
     main()
